@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   env: {
-    PORT: "3010"
+    PORT: "3001"
   }
 };
 

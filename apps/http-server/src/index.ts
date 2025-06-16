@@ -1,7 +1,6 @@
 import express from 'express';
-import type { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import { prisma } from '@repo/db'; // Using the correct export name
+import { prisma } from '@repo/db';
 
 const app = express();
 
@@ -9,89 +8,57 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Routes
-app.get('/', (req: Request, res: Response) => {
-  res.send('Hello from the HTTP server!');
+// Basic health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', service: 'http-server' });
 });
 
-app.post('/signup', async (req: Request, res: Response) => {
+// Example endpoint to get all users
+app.get('/users', async (req, res) => {
   try {
-    const { username, password, email } = req.body;
-
-    // Input validation
-    if (!username || !password || !email) {
-      return res.status(400).json({
-        error: 'Missing required fields',
-        details: {
-          username: !username ? 'Username is required' : null,
-          password: !password ? 'Password is required' : null,
-          email: !email ? 'Email is required' : null
-        }
-      });
-    }
-
-    // Email format validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({
-        error: 'Invalid email format'
-      });
-    }
-
-    // Check if user already exists
-    const existingUser = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { username },
-          { email }
-        ]
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        username: true,
+        email: true
       }
     });
-
-    if (existingUser) {
-      return res.status(400).json({
-        error: 'User already exists',
-        details: existingUser.username === username ? 'Username taken' : 'Email already registered'
-      });
-    }
-
-    // Create user
-    const user = await prisma.user.create({
-      data: {
-        username,
-        password, // Note: In production, you should hash the password
-        email
-      }
-    });
-
-    // Return success response
-    res.status(201).json({
-      message: 'User created successfully',
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email
-      }
-    });
+    res.json(users);
   } catch (error) {
-    console.error('Signup error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Unknown error occurred'
-    });
+    console.error('Error fetching users:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
   }
 });
 
-// Error handling middleware
-app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-  console.error('Server error:', err);
-  res.status(500).json({
-    error: 'Internal server error',
-    message: err.message
-  });
+// Example endpoint to create a user
+app.post('/users', async (req, res) => {
+  try {
+    const { username, email, password } = req.body;
+    
+    if (!username || !email || !password) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const user = await prisma.user.create({
+      data: {
+        username,
+        email,
+        password // Note: In production, hash the password
+      }
+    });
+
+    res.status(201).json({
+      id: user.id,
+      username: user.username,
+      email: user.email
+    });
+  } catch (error) {
+    console.error('Error creating user:', error);
+    res.status(500).json({ error: 'Failed to create user' });
+  }
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`HTTP server is running on http://localhost:${PORT}`);
+  console.log(`HTTP server running on http://localhost:${PORT}`);
 });
