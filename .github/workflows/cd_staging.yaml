@@ -1,21 +1,59 @@
 name: Deploy to Staging
+
 on:
   push:
     branches:
       - "main"
 
 jobs:
-    redeploy_everything:
-        name: Deploying everything to the staging cluster
-        runs-on: ubuntu-latest
+  deploy:
+    name: Deploy Multi-Server App
+    runs-on: ubuntu-latest
 
-        steps:
-            - name: ssh into server
-              run: |
-                echo "${{secrets.SSH_PRIVATE_KEY}}" > ~/.ssh/ssh_key
-                ssh -i ~/.ssh/ssh_key root@65.2.82.95
-                cd multi-server-app && git pull
-                pnpm install
-                pnpm run build
-                pm2 restart all
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build applications
+        run: pnpm run build
+
+      - name: Deploy to server
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          # Setup SSH
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          
+          # Add server to known hosts
+          ssh-keyscan -H $SERVER_HOST >> ~/.ssh/known_hosts
+          
+          # Deploy commands
+          ssh -i ~/.ssh/deploy_key $SERVER_USER@$SERVER_HOST << 'ENDSSH'
+            cd /path/to/multi-server-app
+            git pull origin main
+            pnpm install
+            pnpm run build
+            
+            # Restart services using PM2
+            pm2 restart http-server
+            pm2 restart ws-server
+            pm2 restart web
+          ENDSSH
 
