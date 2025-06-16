@@ -1,0 +1,47 @@
+name: Test SSH Connection
+
+on:
+  workflow_dispatch:  # This allows manual triggering
+
+jobs:
+  test-connection:
+    name: Test SSH Connection
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check SSH Key Format
+        run: |
+          echo "Testing SSH key format..."
+          if [[ "${{ secrets.SSH_PRIVATE_KEY }}" != *"BEGIN"* ]] || [[ "${{ secrets.SSH_PRIVATE_KEY }}" != *"END"* ]]; then
+            echo "Error: SSH_PRIVATE_KEY seems to be missing BEGIN or END markers"
+            exit 1
+          fi
+          echo "SSH key format looks good"
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "SSH key file created and permissions set"
+
+      - name: Test SSH Connection
+        run: |
+          echo "Testing connection to ${{ secrets.SERVER_HOST }}..."
+          ssh-keyscan -H "${{ secrets.SERVER_HOST }}" >> ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}" "echo 'SSH connection successful!'"
+          echo "SSH connection test completed"
+
+      - name: Verify Server Environment
+        run: |
+          echo "Checking server environment..."
+          ssh -i ~/.ssh/deploy_key "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}" << 'ENDSSH'
+            echo "Node version:"
+            node --version
+            echo "PNPM version:"
+            pnpm --version
+            echo "PM2 version:"
+            pm2 --version
+            echo "Git version:"
+            git --version
+          ENDSSH 
