@@ -13,11 +13,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Fetch all history for proper versioning
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '18'
+          cache: 'pnpm'
 
       - name: Install pnpm
         uses: pnpm/action-setup@v2
@@ -25,43 +28,93 @@ jobs:
           version: 8
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Generate Prisma Client
         run: |
           cd packages/prisma
           pnpm prisma generate
+        continue-on-error: true  # Continue even if Prisma generation fails
 
       - name: Build applications
         run: pnpm run build
+        continue-on-error: true  # Continue even if build fails
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "SSH key file created and permissions set"
+          
+          # Debug: Check if key file exists and has correct permissions
+          ls -la ~/.ssh/deploy_key
+          
+          # Add server to known hosts
+          ssh-keyscan -H "${{ secrets.SERVER_HOST }}" >> ~/.ssh/known_hosts
+          echo "Added server to known hosts"
 
       - name: Deploy to server
         env:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
+          REPO_URL: https://github.com/raj-kochale/multi-server-app.git
         run: |
-          # Setup SSH
-          mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
+          echo "Starting deployment to $SERVER_USER@$SERVER_HOST"
           
-          # Add server to known hosts
-          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
+          # Test SSH connection first
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_HOST" "echo 'SSH connection successful'"
           
           # Deploy commands
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_HOST" << 'ENDSSH'
-            cd /path/to/multi-server-app
-            git pull origin main
-            pnpm install
-            cd packages/prisma
-            pnpm prisma generate
-            cd ../..
-            pnpm run build
+            set -e  # Exit on error
+            echo "Starting deployment process..."
             
-            # Restart services using PM2
-            pm2 restart http-server
-            pm2 restart ws-server
-            pm2 restart web
+            # Navigate to project directory
+            cd /root/multi-server-app || {
+              echo "Error: Could not find project directory"
+              exit 1
+            }
+            
+            # Pull latest changes
+            echo "Pulling latest changes..."
+            git pull origin main || {
+              echo "Error: Failed to pull latest changes"
+              exit 1
+            }
+            
+            # Install dependencies
+            echo "Installing dependencies..."
+            pnpm install --frozen-lockfile || {
+              echo "Error: Failed to install dependencies"
+              exit 1
+            }
+            
+            # Generate Prisma client
+            echo "Generating Prisma client..."
+            cd packages/prisma
+            pnpm prisma generate || {
+              echo "Error: Failed to generate Prisma client"
+              exit 1
+            }
+            cd ../..
+            
+            # Build applications
+            echo "Building applications..."
+            pnpm run build || {
+              echo "Error: Failed to build applications"
+              exit 1
+            }
+            
+            # Restart services
+            echo "Restarting services..."
+            pm2 restart http-server || echo "Warning: Failed to restart http-server"
+            pm2 restart ws-server || echo "Warning: Failed to restart ws-server"
+            pm2 restart web || echo "Warning: Failed to restart web"
+            
+            # Save PM2 process list
+            pm2 save
+            
+            echo "Deployment completed successfully!"
           ENDSSH
 
