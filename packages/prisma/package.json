@@ -11,15 +11,18 @@
     }
   },
   "scripts": {
-    "build": "tsc"
+    "build": "prisma generate && tsc",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "postinstall": "prisma generate"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "@prisma/client": "6.8.2",
-    "@types/node": "^22.15.3",
-    "prisma": "^6.8.2",
-    "typescript": "^5.0.0"
+    "@prisma/client": "^5.10.2",
+    "@types/node": "^20.11.19",
+    "prisma": "^5.10.2",
+    "typescript": "^5.3.3"
   }
 }
